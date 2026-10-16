@@ -584,14 +584,18 @@
             }
             if (result.site_url) {
               terminal.textContent += `Live site: ${result.site_url}\n`;
-            } else if (result.site_url_error) {
-              terminal.textContent += `${result.site_url_error}\n`;
+            } else {
+              terminal.textContent += `Live site URL unavailable. ${result.site_url_error || 'The Netlify Function did not return a site URL. Redeploy the latest web/ folder, including its Netlify Function.'}\n`;
             }
             terminal.textContent += `Run details: ${result.run_url || actionsUrl}\n`;
             terminal.scrollTop = terminal.scrollHeight;
 
             if (result.conclusion === 'success') {
-              finishExecution(true, result.site_url);
+              finishExecution(
+                true,
+                result.site_url,
+                result.site_url ? null : 'Workflow succeeded, but the live-site URL was not returned. Redeploy the latest web/ folder, including its Netlify Function.'
+              );
             } else {
               finishExecution(
                 false,
@@ -652,7 +656,7 @@
       btnText.textContent = 'Process Certificates';
 
       if (success) {
-        statusBadge.textContent = 'Completed';
+        statusBadge.textContent = siteUrl ? 'Completed' : 'Completed - URL unavailable';
         statusBadge.className = 'status-badge success';
         errorCard.style.display = 'none';
         if (siteUrl) {
@@ -660,6 +664,9 @@
           liveLink.textContent = siteUrl;
           btnOpenSite.href = siteUrl;
           liveLinkCard.style.display = 'flex';
+        } else if (errorText) {
+          terminal.textContent += `${errorText}\n`;
+          terminal.scrollTop = terminal.scrollHeight;
         }
       } else {
         statusBadge.textContent = failureStatus;
