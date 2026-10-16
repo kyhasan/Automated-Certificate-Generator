@@ -168,7 +168,7 @@ def parse_tournament_data(input_url):
         "participants": participants
     }
 
-def generate_single_certificate(p, category, total_rounds, template_image_reader, output_dir):
+def generate_single_certificate(p, category, total_rounds, template_file, output_dir):
     """Generate a single participant certificate PDF using in-memory QR code"""
     rank = p["rank"]
     name = p["name"]
@@ -199,7 +199,7 @@ def generate_single_certificate(p, category, total_rounds, template_image_reader
     c = canvas.Canvas(pdf_path, pagesize=landscape(A4))
     
     # Draw background template
-    c.drawImage(template_image_reader, 0, 0, width=WIDTH, height=HEIGHT)
+    c.drawImage(ImageReader(template_file), 0, 0, width=WIDTH, height=HEIGHT)
     c.setFillColor(FILL_COLOR)
 
     # Add participant name (with dynamic font sizing for long names)
@@ -252,7 +252,7 @@ def generate_html_page(tournament_title, category, participants, output_html_fil
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{tournament_title} - {category} Certificates</title>
+  <title>{tournament_title} Certificates</title>
   <style>
     body {{
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
@@ -346,7 +346,7 @@ def generate_html_page(tournament_title, category, participants, output_html_fil
 <body>
   <div class="header-box">
     <h1>{tournament_title}</h1>
-    <h2>{category} Category - Appreciation Certificates</h2>
+    <h2>Appreciation Certificates</h2>
   </div>
 
   <input type="text" id="searchInput" onkeyup="searchTable()" placeholder="Search for participant name...">
@@ -407,7 +407,6 @@ def run_automation(tournament_url, category, total_rounds=None, template_file="c
         raise FileNotFoundError(f"Certificate template file not found: {template_file}")
 
     os.makedirs(output_dir, exist_ok=True)
-    template_reader = ImageReader(template_file)
 
     # Step 1: Scrape tournament data
     print(f"\n--- Scraping Chess Results for {category} ---")
@@ -440,7 +439,7 @@ def run_automation(tournament_url, category, total_rounds=None, template_file="c
     max_workers = min(32, max(1, len(participants)))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_participant = {
-            executor.submit(generate_single_certificate, p, category, total_rounds, template_reader, output_dir): p
+            executor.submit(generate_single_certificate, p, category, total_rounds, template_file, output_dir): p
             for p in participants
         }
 
