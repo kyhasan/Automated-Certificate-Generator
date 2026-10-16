@@ -401,7 +401,7 @@ def generate_html_page(tournament_title, category, participants, output_html_fil
         f.write(html_content)
     print(f"[OK] HTML page generated: {output_html_file}")
 
-def run_automation(tournament_url, category, total_rounds=None, template_file="cert.png", output_dir="certificates", html_file="index.html", save_csv=True):
+def run_automation(tournament_url, category, total_rounds=None, template_file="cert.png", output_dir="certificates", html_file="index.html", save_csv=True, deploy=False, site_name=None, netlify_token=None):
     """End-to-end automation pipeline"""
     if not os.path.exists(template_file):
         raise FileNotFoundError(f"Certificate template file not found: {template_file}")
@@ -454,8 +454,24 @@ def run_automation(tournament_url, category, total_rounds=None, template_file="c
     generate_html_page(tournament_title, category, participants, html_file)
     print(f"\n[DONE] Successfully generated {len(participants)} certificates and {html_file}")
 
+    # Step 4: Optional Automated Netlify Deployment
+    if deploy:
+        from netlify_deployer import deploy_to_netlify, slugify_site_name, load_dotenv
+        load_dotenv()
+        target_input = site_name if site_name else tournament_title
+        target_site = slugify_site_name(target_input, category)
+        deploy_to_netlify(
+            site_name=target_site,
+            token=netlify_token,
+            html_file=html_file,
+            cert_dir=output_dir
+        )
+
 if __name__ == "__main__":
     import argparse
+    from netlify_deployer import load_dotenv
+    load_dotenv()
+
     parser = argparse.ArgumentParser(description="Automate chess certificates from chess-results.com")
     parser.add_argument("--url", default="https://s1.chess-results.com/tnr1425535.aspx?lan=1", help="chess-results.com tournament URL")
     parser.add_argument("--category", default="U10", help="Category name (e.g. U10, U18)")
@@ -464,6 +480,9 @@ if __name__ == "__main__":
     parser.add_argument("--output_dir", default="certificates", help="Certificates folder")
     parser.add_argument("--html", default="index.html", help="Output HTML file path")
     parser.add_argument("--no-csv", action="store_true", help="Skip writing the intermediate participants CSV")
+    parser.add_argument("--deploy", action="store_true", help="Automatically deploy to Netlify once output is generated")
+    parser.add_argument("--site-name", default=None, help="Explicit Netlify site name override (e.g. 4th-nca-district-level-tournament-u10)")
+    parser.add_argument("--netlify-token", default=None, help="Netlify Personal Access Token (defaults to NETLIFY_AUTH_TOKEN from .env or env var)")
 
     args = parser.parse_args()
     run_automation(
@@ -473,5 +492,8 @@ if __name__ == "__main__":
         template_file=args.template,
         output_dir=args.output_dir,
         html_file=args.html,
-        save_csv=not args.no_csv
+        save_csv=not args.no_csv,
+        deploy=args.deploy,
+        site_name=args.site_name,
+        netlify_token=args.netlify_token
     )
