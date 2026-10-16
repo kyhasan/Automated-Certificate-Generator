@@ -48,23 +48,25 @@ jobs:
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
         run: |
-          ARGS="--url \"${{ github.event.inputs.tournament_url }}\""
-          
-          if [ -n "${{ github.event.inputs.category }}" ]; then
-            ARGS="$ARGS --category \"${{ github.event.inputs.category }}\""
-          fi
-          
-          if [ -n "${{ github.event.inputs.rounds }}" ]; then
-            ARGS="$ARGS --rounds ${{ github.event.inputs.rounds }}"
-          fi
-          
-          if [ -n "${{ github.event.inputs.site_name }}" ]; then
-            ARGS="$ARGS --site-name \"${{ github.event.inputs.site_name }}\""
-          fi
-          
-          if [ "${{ github.event.inputs.deploy }}" = "true" ]; then
-            ARGS="$ARGS --deploy"
-          fi
-          
-          python cert_generator.py $ARGS
+          # build args as an array to preserve proper quoting
+          ARGS=()
+          ARGS+=(--url "${{ github.event.inputs.tournament_url }}")
 
+          if [ -n "${{ github.event.inputs.category }}" ]; then
+            ARGS+=(--category "${{ github.event.inputs.category }}")
+          fi
+
+          if [ -n "${{ github.event.inputs.rounds }}" ]; then
+            ARGS+=(--rounds "${{ github.event.inputs.rounds }}")
+          fi
+
+          if [ -n "${{ github.event.inputs.site_name }}" ]; then
+            ARGS+=(--site-name "${{ github.event.inputs.site_name }}")
+          fi
+
+          if [ "${{ github.event.inputs.deploy }}" = "true" ]; then
+            ARGS+=(--deploy)
+          fi
+
+          # pass the array safely
+          python cert_generator.py "${ARGS[@]}"
