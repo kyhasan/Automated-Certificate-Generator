@@ -35,18 +35,25 @@ flowchart LR
 
 ## 2. Project Naming Convention
 
-Based on your Netlify dashboard (e.g., `4th-nca-district-level-tournament-u10`, `4th-nca-district-level-tournament-u8`, `nca-2-state-lvl-chess-tournament-u8`):
-
 ### Naming Rule:
-$$\text{Site Name} = \text{slugify}(\text{Tournament Title}) + \text{"-"} + \text{lower}(\text{Category})$$
+$$\text{Site Name} = \text{slugify}(\text{Tournament Title / Site Name})$$
+- If the title or site name **already ends with the category**, it is ignored (no duplicate appended).
+- If it does **not** end with the category, the category is appended: `+ "-" + lower(Category)`.
 
 ### Examples:
-| Scraped / Tournament Title | Category Passed | Resulting Netlify Site Name |
-| :--- | :--- | :--- |
-| `4th NCA District Level Tournament` | `U10` | `4th-nca-district-level-tournament-u10` |
-| `4th NCA District Level Tournament` | `U08` | `4th-nca-district-level-tournament-u08` |
-| `4th NCA District Level Tournament` | `U8` | `4th-nca-district-level-tournament-u8` |
-| `4th NCA District Level Tournament` | `U15` | `4th-nca-district-level-tournament-u15` |
+| Scraped / Tournament Title | Category Passed or Detected | Resulting Netlify Site Name | Note |
+| :--- | :--- | :--- | :--- |
+| `4th NCA District Level Tournament` | `U10` | `4th-nca-district-level-tournament-u10` | Category appended |
+| `4th NCA District Level Tournament - U10` | `U10` | `4th-nca-district-level-tournament-u10` | Already ends with U10 $\rightarrow$ ignored duplicate |
+| `4th NCA District Level Tournament` | `U08` | `4th-nca-district-level-tournament-u08` | Category appended |
+| `4th NCA District Level Tournament - U8` | `U8` | `4th-nca-district-level-tournament-u8` | Already ends with U8 $\rightarrow$ ignored duplicate |
+| `4th NCA District Level Tournament` | `U15` | `4th-nca-district-level-tournament-u15` | Category appended |
+
+### Auto-Detection from URL / Tournament Data (0ms Performance Overhead):
+Category and Total Rounds are automatically extracted directly from the tournament ranking and crosstable data already fetched in memory:
+- **Category Detection**: Extracts `U10`, `U08`, `U8`, `U14`, `Open`, etc. from the tournament header or page text.
+- **Rounds Detection**: Extracts total rounds from `"Final Ranking after X Rounds"` or crosstable round columns (`1.Rd`, `2.Rd`...).
+- **Performance**: Zero additional HTTP requests are made. The extraction runs on already-fetched HTML strings concurrently, incurring **0ms extra latency**.
 
 ### Custom Override:
 A `--site-name` argument is supported to allow providing an exact custom name whenever needed:
@@ -243,17 +250,19 @@ def slugify_tournament_name(title, category):
 
 ## 5. How to Run the Automated Workflow
 
-### Option 1: End-to-End Execution with `--deploy` (Recommended)
+### Option 1: Fully Automated End-to-End Execution (Recommended)
 
-Generate certificates, build HTML, and immediately deploy to Netlify:
+Category and rounds are auto-detected from the tournament URL data; certificates and HTML are built and deployed immediately to Netlify:
 
 ```powershell
 python cert_generator.py `
   --url "https://s1.chess-results.com/tnr1425535.aspx?lan=1" `
-  --category "U10" `
-  --rounds 5 `
   --deploy
 ```
+
+- **Category & Rounds**: Auto-detected directly with 0ms extra overhead.
+- **Site Name**: Auto-formatted (e.g. `4th-nca-district-level-tournament-u10`).
+- **Token**: Automatically read from `.env`.
 
 ### Option 2: Specifying an Explicit Site Name
 

@@ -6,11 +6,12 @@ It scrapes the tournament ranking data, finds participant names and scores, gene
 
 ## Features
 - Fetches participant data from a chess-results.com tournament URL
+- **Auto-detects Category & Total Rounds** directly from tournament data (zero extra network calls, 0ms overhead)
 - Uses a certificate template image for PDF generation
 - Generates one certificate PDF per participant
 - Adds a QR code linking to each player's result page
 - Creates a searchable HTML index to browse/download certificates
-- Supports custom category and round settings
+- Supports optional manual overrides for category and round settings
 
 ## Requirements
 Python 3.9+
@@ -23,21 +24,27 @@ pip install -r requirements.txt
 
 ## Usage
 
+### Simple Usage (Category & Rounds Auto-Detected)
+
+You only need to supply the tournament URL:
+
 ```bash
-python cert_generator.py --url "https://s1.chess-results.com/tnr1425535.aspx?lan=1" --category "U10" --rounds 5 --template "cert.png" --output_dir "certificates" --html "index.html"
+python cert_generator.py --url "https://s1.chess-results.com/tnr1425535.aspx?lan=1"
 ```
 
-### Automated Netlify Deployment
+The script will automatically detect the category (e.g. `U10`) and total rounds (e.g. `5`) from the tournament page.
+
+### End-to-End Generation & Netlify Deployment
 
 To generate certificates and immediately deploy the searchable `index.html` and `certificates/` to Netlify:
 
 ```bash
-python cert_generator.py --url "https://s1.chess-results.com/tnr1425535.aspx?lan=1" --category "U10" --rounds 5 --deploy
+python cert_generator.py --url "https://s1.chess-results.com/tnr1425535.aspx?lan=1" --deploy
 ```
 
-- Automatic naming follows tournament and category conventions (e.g., `4th-nca-district-level-tournament-u10`).
-- You can override the project name with `--site-name <custom-name>`.
-- Set your `NETLIFY_AUTH_TOKEN` environment variable or provide `--netlify-token <token>`.
+- **Auto-detection**: Automatically detects category (`U10`), rounds (`5`), and derives the Netlify site name (`4th-nca-district-level-tournament-u10`).
+- **Overrides**: You can still explicitly pass `--category "U10"`, `--rounds 5`, or `--site-name <custom-name>` if desired.
+- **Authentication**: Reads `NETLIFY_AUTH_TOKEN` automatically from `.env`.
 - For quick step-by-step setup, see [QUICKSTART.md](QUICKSTART.md).
 - For complete architecture and API specifications, see [AUTOMATED_NETLIFY_DEPLOYMENT.md](AUTOMATED_NETLIFY_DEPLOYMENT.md).
 

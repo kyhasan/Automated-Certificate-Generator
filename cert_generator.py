@@ -102,17 +102,51 @@ def parse_tournament_data(input_url):
 
     # Scrape tournament title
     tournament_title = "Chess Tournament"
-    title_match = re.search(r'<title>(.*?)</title>', html_art1, re.IGNORECASE | re.DOTALL)
-    if title_match:
-        t_raw = title_match.group(1).strip()
-        t_raw = re.sub(r'^Chess-Results Server Chess-results\.com\s*-\s*', '', t_raw)
-        tournament_title = t_raw
+    # First check <h2> headings which chess-results uses for the tournament heading
+    h2_matches = [re.sub(r'<[^>]+>', '', h).strip() for h in re.findall(r'<h2[^>]*>(.*?)</h2>', html_art1, re.IGNORECASE | re.DOTALL)]
+    if h2_matches and h2_matches[0]:
+        tournament_title = h2_matches[0]
+    else:
+        title_match = re.search(r'<title>(.*?)</title>', html_art1, re.IGNORECASE | re.DOTALL)
+        if title_match:
+            t_raw = title_match.group(1).strip()
+            t_raw = re.sub(r'^Chess-Results Server Chess-results\.com\s*-\s*', '', t_raw)
+            tournament_title = t_raw
 
-    # Extract detected rounds from title or heading if possible
+    # Check query params for explicit category or rounds in the URL
+    url_cat = q_params.get('cat') or q_params.get('category')
+    url_rd = q_params.get('rd') or q_params.get('rounds')
+
+    # Extract detected category from URL query or tournament title / page
+    detected_category = None
+    if url_cat:
+        detected_category = url_cat
+    else:
+        cat_match = re.search(r'\b(U\s*-?\s*\d{1,2}|Under\s*-?\s*\d{1,2}|Open|Girls)\b', tournament_title, re.IGNORECASE)
+        if not cat_match and html_art1:
+            cat_match = re.search(r'\b(U\s*-?\s*\d{1,2}|Under\s*-?\s*\d{1,2})\b', html_art1, re.IGNORECASE)
+        if cat_match:
+            raw_cat = cat_match.group(1).strip()
+            num_match = re.search(r'\d+', raw_cat)
+            if num_match:
+                # Retain zero-padding if present in the raw text (e.g. U08 -> U08, U8 -> U8, Under 10 -> U10)
+                detected_category = f"U{num_match.group(0)}"
+            else:
+                detected_category = raw_cat.capitalize()
+
+    # Extract detected rounds from URL query, ranking heading, or crosstable headers
     detected_rounds = None
-    rounds_match = re.search(r'after\s+(\d+)\s+Rounds', html_art1, re.IGNORECASE)
-    if rounds_match:
-        detected_rounds = int(rounds_match.group(1))
+    if url_rd and url_rd.isdigit():
+        detected_rounds = int(url_rd)
+    else:
+        rounds_match = re.search(r'after\s+(\d+)\s+Rounds?', html_art1, re.IGNORECASE)
+        if rounds_match:
+            detected_rounds = int(rounds_match.group(1))
+        elif html_art4:
+            # Fallback to checking round columns in art=4 (e.g. '1.Rd', '2.Rd')
+            rd_cols = [int(x) for x in re.findall(r'(\d+)\.Rd', html_art4, re.IGNORECASE)]
+            if rd_cols:
+                detected_rounds = max(rd_cols)
 
     # Parse art=4 for clean participant names & points indexed by Rank
     # In art=4: Rank is cells[0], Name is cells[2], Points is cells[10] (or 5th from end)
@@ -164,6 +198,7 @@ def parse_tournament_data(input_url):
 
     return {
         "tournament_title": tournament_title,
+        "detected_category": detected_category,
         "detected_rounds": detected_rounds,
         "participants": participants
     }
@@ -401,7 +436,7 @@ def generate_html_page(tournament_title, category, participants, output_html_fil
         f.write(html_content)
     print(f"[OK] HTML page generated: {output_html_file}")
 
-def run_automation(tournament_url, category, total_rounds=None, template_file="cert.png", output_dir="certificates", html_file="index.html", save_csv=True, deploy=False, site_name=None, netlify_token=None):
+def run_automation(tournament_url, category=None, total_rounds=None, template_file="cert.png", output_dir="certificates", html_file="index.html", save_csv=True, deploy=False, site_name=None, netlify_token=None):
     """End-to-end automation pipeline"""
     if not os.path.exists(template_file):
         raise FileNotFoundError(f"Certificate template file not found: {template_file}")
@@ -409,18 +444,32 @@ def run_automation(tournament_url, category, total_rounds=None, template_file="c
     os.makedirs(output_dir, exist_ok=True)
 
     # Step 1: Scrape tournament data
-    print(f"\n--- Scraping Chess Results for {category} ---")
+    print(f"\n--- Scraping Chess Results from {tournament_url} ---")
     scraped_info = parse_tournament_data(tournament_url)
     participants = scraped_info["participants"]
     tournament_title = scraped_info["tournament_title"]
 
+    # Resolve category: user argument > auto-detected > fallback
+    if category is None:
+        if scraped_info.get("detected_category"):
+            category = scraped_info["detected_category"]
+            print(f"Auto-detected category: {category}")
+        else:
+            category = "Open"
+            print(f"Category not specified or detected, defaulting to '{category}'")
+    else:
+        print(f"Using specified category: {category}")
+
+    # Resolve total rounds: user argument > auto-detected > fallback
     if total_rounds is None:
-        if scraped_info["detected_rounds"]:
+        if scraped_info.get("detected_rounds"):
             total_rounds = scraped_info["detected_rounds"]
             print(f"Auto-detected total rounds: {total_rounds}")
         else:
             total_rounds = 5
             print(f"Total rounds not specified or detected, defaulting to {total_rounds}")
+    else:
+        print(f"Using specified total rounds: {total_rounds}")
 
     print(f"Found {len(participants)} participants in {category} category.")
 
@@ -474,8 +523,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Automate chess certificates from chess-results.com")
     parser.add_argument("--url", default="https://s1.chess-results.com/tnr1425535.aspx?lan=1", help="chess-results.com tournament URL")
-    parser.add_argument("--category", default="U10", help="Category name (e.g. U10, U18)")
-    parser.add_argument("--rounds", type=int, default=5, help="Total tournament rounds")
+    parser.add_argument("--category", default=None, help="Category name (e.g. U10, U18). Auto-detected from URL/page if omitted.")
+    parser.add_argument("--rounds", type=int, default=None, help="Total tournament rounds. Auto-detected from URL/page if omitted.")
     parser.add_argument("--template", default="cert.png", help="Certificate template image path")
     parser.add_argument("--output_dir", default="certificates", help="Certificates folder")
     parser.add_argument("--html", default="index.html", help="Output HTML file path")

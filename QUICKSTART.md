@@ -66,25 +66,28 @@ You can also pass it explicitly with each run:
 
 ## 4. Step 3: Generate and Deploy
 
-### Basic Usage (Auto-naming)
-Run `cert_generator.py` with the `--deploy` flag:
+### Simplest End-to-End Command (Fully Automated)
+
+Both **Category** and **Total Rounds** are auto-detected directly from the tournament data with **zero extra network requests (0ms overhead)**!
+
+Run `cert_generator.py` with just the URL and `--deploy`:
 
 ```powershell
 python cert_generator.py `
   --url "https://s1.chess-results.com/tnr1425535.aspx?lan=1" `
-  --category "U10" `
-  --rounds 5 `
   --deploy
 ```
 
 **What happens automatically:**
 1. Scrapes participant data from chess-results.com.
-2. Generates all certificate PDFs inside `certificates/`.
-3. Creates the searchable `index.html`.
-4. Automatically derives the Netlify project name as:
-   `4th-nca-district-level-tournament-u10`
-5. Packs `index.html` and `certificates/` into memory and deploys to Netlify.
-6. Prints your live URL:
+2. **Auto-detects Category** (e.g. `U10`) from the tournament title.
+3. **Auto-detects Total Rounds** (e.g. `5`) from the ranking/crosstable data.
+4. Generates all certificate PDFs inside `certificates/`.
+5. Creates the searchable `index.html`.
+6. Checks and auto-names the Netlify project:
+   `4th-nca-district-level-tournament-u10` (ignores duplicate category if title already has it).
+7. Packs `index.html` and `certificates/` into memory and deploys to Netlify.
+8. Prints your live URL:
    `https://4th-nca-district-level-tournament-u10.netlify.app`
 
 ---
