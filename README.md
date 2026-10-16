@@ -24,7 +24,22 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Simple Usage (Category & Rounds Auto-Detected)
+### 🚀 Graphical Web Dashboard (Recommended)
+
+To run with a visual user interface:
+
+- **Windows**: Double-click `run_ui.bat`
+- **Or via terminal**: `python gui_server.py`
+
+This opens a modern web dashboard in your browser (`http://localhost:5000`) where you can paste the URL, toggle deployment, customize category/rounds/site name, click **Process Certificates**, and monitor live logs in real time.
+
+For full UI documentation and instructions on deploying this UI to Netlify, see [UI_GUIDE.md](UI_GUIDE.md) and [UI_DEPLOYMENT_PLAN.md](UI_DEPLOYMENT_PLAN.md).
+
+---
+
+### Command Line Usage
+
+#### 1. Simple Usage (Category & Rounds Auto-Detected)
 
 You only need to supply the tournament URL:
 

@@ -1,0 +1,70 @@
+name: Automated Certificate Generator Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      tournament_url:
+        description: 'Chess-Results Tournament URL'
+        required: true
+        default: 'https://s1.chess-results.com/tnr1425535.aspx?lan=1'
+      category:
+        description: 'Category (leave blank for auto-detection)'
+        required: false
+        default: ''
+      rounds:
+        description: 'Total rounds (leave blank for auto-detection)'
+        required: false
+        default: ''
+      site_name:
+        description: 'Netlify site name override (leave blank for auto-formatting)'
+        required: false
+        default: ''
+      deploy:
+        description: 'Deploy automatically to Netlify'
+        type: boolean
+        required: true
+        default: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Certificate Generator & Netlify Deployer
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: |
+          ARGS="--url \"${{ github.event.inputs.tournament_url }}\""
+          
+          if [ -n "${{ github.event.inputs.category }}" ]; then
+            ARGS="$ARGS --category \"${{ github.event.inputs.category }}\""
+          fi
+          
+          if [ -n "${{ github.event.inputs.rounds }}" ]; then
+            ARGS="$ARGS --rounds ${{ github.event.inputs.rounds }}"
+          fi
+          
+          if [ -n "${{ github.event.inputs.site_name }}" ]; then
+            ARGS="$ARGS --site-name \"${{ github.event.inputs.site_name }}\""
+          fi
+          
+          if [ "${{ github.event.inputs.deploy }}" = "true" ]; then
+            ARGS="$ARGS --deploy"
+          fi
+          
+          python cert_generator.py $ARGS
+

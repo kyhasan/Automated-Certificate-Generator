@@ -4,4 +4,9 @@ __pycache__/
 *.zip
 *.csv
 *.pdf
-*.html
+# Ignore generated output files at the project root only
+/index.html
+/certificates/
+
+# Ensure web UI source files are always tracked
+!web/index.html
