@@ -353,14 +353,14 @@
     <div class="card">
       <form id="certForm">
         <div class="form-group">
-          <label for="url">Tournament URL <span style="color: var(--danger)">*</span></label>
+          <label for="url">Tournament URL (Category-wise) <span style="color: var(--danger)">*</span></label>
           <input type="text" id="url" name="url" required placeholder="https://s1.chess-results.com/tnr1425535.aspx?lan=1" value="https://s1.chess-results.com/tnr1425535.aspx?lan=1">
         </div>
 
         <div class="grid-2 form-group">
           <div>
-            <label for="category">Category <span class="label-hint">(Auto-detected if empty)</span></label>
-            <input type="text" id="category" name="category" placeholder="e.g. U10, U08, U8, U15">
+            <label for="category">Specific Category <span class="label-hint">(Auto-detected if empty)</span></label>
+            <input type="text" id="category" name="category" placeholder="e.g. U10 / U08 / U8 / U15">
           </div>
           <div>
             <label for="rounds">Total Rounds <span class="label-hint">(Auto-detected if empty)</span></label>
@@ -582,11 +582,16 @@
             if (result.failure_details && result.failure_details.length > 0) {
               terminal.textContent += `Failed job/step: ${result.failure_details.join('; ')}\n`;
             }
+            if (result.site_url) {
+              terminal.textContent += `Live site: ${result.site_url}\n`;
+            } else if (result.site_url_error) {
+              terminal.textContent += `${result.site_url_error}\n`;
+            }
             terminal.textContent += `Run details: ${result.run_url || actionsUrl}\n`;
             terminal.scrollTop = terminal.scrollHeight;
 
             if (result.conclusion === 'success') {
-              finishExecution(true, null);
+              finishExecution(true, result.site_url);
             } else {
               finishExecution(
                 false,

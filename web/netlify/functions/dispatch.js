@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const { inflateRawSync } = require("node:zlib");
 
 const workflowFile = "generate_and_deploy.yml";
 
@@ -61,7 +62,7 @@ async function getWorkflowStatus(repository, token, workflowRef, requestId) {
     failure_details: [],
   };
 
-  if (run.status !== "completed" || run.conclusion === "success") {
+  if (run.status !== "completed") {
     return jsonResponse(200, result);
   }
 
@@ -69,10 +70,21 @@ async function getWorkflowStatus(repository, token, workflowRef, requestId) {
   const jobsResponse = await fetch(jobsUrl, { headers: githubHeaders(token) });
   if (!jobsResponse.ok) {
     console.error(`GitHub failed-job lookup failed with status ${jobsResponse.status}.`);
+    if (run.conclusion === "success") {
+      result.site_url_error = "Workflow succeeded, but its job logs could not be retrieved to find the live-site URL.";
+    }
     return jsonResponse(200, result);
   }
 
   const jobsPayload = await jobsResponse.json();
+  if (!Array.isArray(jobsPayload.jobs)) {
+    console.error("GitHub workflow jobs response did not contain a jobs list.");
+    if (run.conclusion === "success") {
+      result.site_url_error = "Workflow succeeded, but GitHub returned an invalid job list.";
+    }
+    return jsonResponse(200, result);
+  }
+
   result.failure_details = jobsPayload.jobs
     .filter((job) => job.conclusion && job.conclusion !== "success")
     .map((job) => {
@@ -84,7 +96,90 @@ async function getWorkflowStatus(repository, token, workflowRef, requestId) {
         : `${job.name}: ${job.conclusion}`;
     });
 
+  if (run.conclusion === "success") {
+    for (const job of jobsPayload.jobs) {
+      try {
+        const siteUrl = await getSiteUrlFromJobLogs(repository, token, job.id);
+        if (siteUrl) {
+          result.site_url = siteUrl;
+          delete result.site_url_error;
+          break;
+        }
+      } catch (error) {
+        console.error(`Could not extract the deployed site URL from job ${job.id}:`, error);
+        result.site_url_error = "Workflow succeeded, but the live-site URL could not be read from the workflow logs.";
+      }
+    }
+    if (!result.site_url && !result.site_url_error) {
+      result.site_url_error = "No live-site URL was found in the workflow logs; deployment may have been disabled.";
+    }
+  }
+
   return jsonResponse(200, result);
+}
+
+async function getSiteUrlFromJobLogs(repository, token, jobId) {
+  const logsUrl = `https://api.github.com/repos/${repository}/actions/jobs/${jobId}/logs`;
+  const response = await fetch(logsUrl, { headers: githubHeaders(token) });
+  if (!response.ok) {
+    throw new Error(`GitHub returned HTTP ${response.status} for job logs.`);
+  }
+
+  const archive = Buffer.from(await response.arrayBuffer());
+  const endOfCentralDirectory = archive.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  if (endOfCentralDirectory < 0) {
+    throw new Error("GitHub job log response was not a ZIP archive.");
+  }
+
+  const entryCount = archive.readUInt16LE(endOfCentralDirectory + 10);
+  let centralDirectoryOffset = archive.readUInt32LE(endOfCentralDirectory + 16);
+  const siteUrlPattern = /\[DEPLOY SUCCESS\] Site is LIVE at:\s*(https:\/\/[^\s]+)/;
+
+  for (let entryIndex = 0; entryIndex < entryCount; entryIndex += 1) {
+    if (archive.readUInt32LE(centralDirectoryOffset) !== 0x02014b50) {
+      throw new Error("GitHub job log ZIP archive has an invalid directory entry.");
+    }
+
+    const compressionMethod = archive.readUInt16LE(centralDirectoryOffset + 10);
+    const compressedSize = archive.readUInt32LE(centralDirectoryOffset + 20);
+    const filenameLength = archive.readUInt16LE(centralDirectoryOffset + 28);
+    const extraLength = archive.readUInt16LE(centralDirectoryOffset + 30);
+    const commentLength = archive.readUInt16LE(centralDirectoryOffset + 32);
+    const localHeaderOffset = archive.readUInt32LE(centralDirectoryOffset + 42);
+    const filename = archive.toString(
+      "utf8",
+      centralDirectoryOffset + 46,
+      centralDirectoryOffset + 46 + filenameLength,
+    );
+
+    if (archive.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
+      throw new Error(`GitHub job log ZIP entry "${filename}" is invalid.`);
+    }
+
+    const localFilenameLength = archive.readUInt16LE(localHeaderOffset + 26);
+    const localExtraLength = archive.readUInt16LE(localHeaderOffset + 28);
+    const dataOffset = localHeaderOffset + 30 + localFilenameLength + localExtraLength;
+    const compressedData = archive.subarray(dataOffset, dataOffset + compressedSize);
+    let logData;
+
+    if (compressionMethod === 0) {
+      logData = compressedData.toString("utf8");
+    } else if (compressionMethod === 8) {
+      logData = inflateRawSync(compressedData).toString("utf8");
+    } else {
+      throw new Error(`GitHub job log ZIP uses unsupported compression method ${compressionMethod}.`);
+    }
+
+    const match = logData.match(siteUrlPattern);
+    if (match) {
+      const siteUrl = new URL(match[1]);
+      if (siteUrl.protocol === "https:") return siteUrl.toString();
+    }
+
+    centralDirectoryOffset += 46 + filenameLength + extraLength + commentLength;
+  }
+
+  return null;
 }
 
 exports.handler = async (event) => {
