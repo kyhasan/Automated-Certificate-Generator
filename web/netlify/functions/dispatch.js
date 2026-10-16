@@ -97,38 +97,69 @@ async function getWorkflowStatus(repository, token, workflowRef, requestId) {
     });
 
   if (run.conclusion === "success") {
-    for (const job of jobsPayload.jobs) {
-      try {
-        const siteUrl = await getSiteUrlFromJobLogs(repository, token, job.id);
-        if (siteUrl) {
-          result.site_url = siteUrl;
-          delete result.site_url_error;
-          break;
-        }
-      } catch (error) {
-        console.error(`Could not extract the deployed site URL from job ${job.id}:`, error);
-        result.site_url_error = "Workflow succeeded, but the live-site URL could not be read from the workflow logs.";
+    try {
+      result.site_url = await getSiteUrlFromArtifact(
+        repository,
+        token,
+        run.id,
+        requestId,
+      );
+      if (!result.site_url) {
+        result.site_url_error = "No live-site URL artifact was produced. Check that deployment was enabled and the latest GitHub workflow is deployed.";
       }
-    }
-    if (!result.site_url && !result.site_url_error) {
-      result.site_url_error = "No live-site URL was found in the workflow logs; deployment may have been disabled.";
+    } catch (error) {
+      console.error(`Could not retrieve the live-site URL artifact for run ${run.id}:`, error);
+      result.site_url_error = "Workflow succeeded, but the live-site URL artifact could not be retrieved. Open the GitHub Actions run for details.";
     }
   }
 
   return jsonResponse(200, result);
 }
 
-async function getSiteUrlFromJobLogs(repository, token, jobId) {
-  const logsUrl = `https://api.github.com/repos/${repository}/actions/jobs/${jobId}/logs`;
-  const response = await fetch(logsUrl, { headers: githubHeaders(token) });
-  if (!response.ok) {
-    throw new Error(`GitHub returned HTTP ${response.status} for job logs.`);
+async function getSiteUrlFromArtifact(repository, token, runId, requestId) {
+  const artifactsUrl = `https://api.github.com/repos/${repository}/actions/runs/${runId}/artifacts?per_page=100`;
+  const artifactsResponse = await fetch(artifactsUrl, { headers: githubHeaders(token) });
+  if (!artifactsResponse.ok) {
+    throw new Error(`GitHub returned HTTP ${artifactsResponse.status} while listing workflow artifacts.`);
   }
 
-  const archive = Buffer.from(await response.arrayBuffer());
+  const artifactsPayload = await artifactsResponse.json();
+  if (!Array.isArray(artifactsPayload.artifacts)) {
+    throw new Error("GitHub artifact response did not contain an artifact list.");
+  }
+
+  const artifactName = `netlify-site-url-${requestId}`;
+  const artifact = artifactsPayload.artifacts.find((item) => item.name === artifactName);
+  if (!artifact) return null;
+
+  const archiveUrl = `https://api.github.com/repos/${repository}/actions/artifacts/${artifact.id}/zip`;
+  const archiveResponse = await fetch(archiveUrl, { headers: githubHeaders(token) });
+  if (!archiveResponse.ok) {
+    throw new Error(`GitHub returned HTTP ${archiveResponse.status} while downloading the live-site URL artifact.`);
+  }
+
+  const archive = Buffer.from(await archiveResponse.arrayBuffer());
+  const siteUrlText = getZipEntryText(archive, "site_url.txt");
+  if (!siteUrlText) {
+    throw new Error("The live-site URL artifact does not contain site_url.txt.");
+  }
+
+  let siteUrl;
+  try {
+    siteUrl = new URL(siteUrlText.trim());
+  } catch {
+    throw new Error("The live-site URL artifact does not contain a valid URL.");
+  }
+  if (siteUrl.protocol !== "https:") {
+    throw new Error("The live-site URL must use HTTPS.");
+  }
+  return siteUrl.toString();
+}
+
+function getZipEntryText(archive, targetName) {
   const endOfCentralDirectory = archive.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
   if (endOfCentralDirectory < 0) {
-    throw new Error("GitHub job log response was not a ZIP archive.");
+    throw new Error("GitHub artifact response was not a ZIP archive.");
   }
 
   const entryCount = archive.readUInt16LE(endOfCentralDirectory + 10);
@@ -153,27 +184,25 @@ async function getSiteUrlFromJobLogs(repository, token, jobId) {
     );
 
     if (archive.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
-      throw new Error(`GitHub job log ZIP entry "${filename}" is invalid.`);
+      throw new Error(`GitHub artifact ZIP entry "${filename}" is invalid.`);
     }
 
     const localFilenameLength = archive.readUInt16LE(localHeaderOffset + 26);
     const localExtraLength = archive.readUInt16LE(localHeaderOffset + 28);
     const dataOffset = localHeaderOffset + 30 + localFilenameLength + localExtraLength;
     const compressedData = archive.subarray(dataOffset, dataOffset + compressedSize);
-    let logData;
+    let entryText;
 
     if (compressionMethod === 0) {
-      logData = compressedData.toString("utf8");
+      entryText = compressedData.toString("utf8");
     } else if (compressionMethod === 8) {
-      logData = inflateRawSync(compressedData).toString("utf8");
+      entryText = inflateRawSync(compressedData).toString("utf8");
     } else {
-      throw new Error(`GitHub job log ZIP uses unsupported compression method ${compressionMethod}.`);
+      throw new Error(`GitHub artifact ZIP uses unsupported compression method ${compressionMethod}.`);
     }
 
-    const match = logData.match(siteUrlPattern);
-    if (match) {
-      const siteUrl = new URL(match[1]);
-      if (siteUrl.protocol === "https:") return siteUrl.toString();
+    if (filename === targetName) {
+      return entryText;
     }
 
     centralDirectoryOffset += 46 + filenameLength + extraLength + commentLength;

@@ -585,7 +585,7 @@
             if (result.site_url) {
               terminal.textContent += `Live site: ${result.site_url}\n`;
             } else {
-              terminal.textContent += `Live site URL unavailable. ${result.site_url_error || 'The Netlify Function did not return a site URL. Redeploy the latest web/ folder, including its Netlify Function.'}\n`;
+              terminal.textContent += `Live site URL unavailable. ${result.site_url_error || 'The Netlify Function did not return a site URL. Deploy the latest GitHub workflow and Netlify Function.'}\n`;
             }
             terminal.textContent += `Run details: ${result.run_url || actionsUrl}\n`;
             terminal.scrollTop = terminal.scrollHeight;
@@ -594,7 +594,7 @@
               finishExecution(
                 true,
                 result.site_url,
-                result.site_url ? null : 'Workflow succeeded, but the live-site URL was not returned. Redeploy the latest web/ folder, including its Netlify Function.'
+                result.site_url ? null : 'Workflow succeeded, but the live-site URL was not returned. Deploy the latest GitHub workflow and Netlify Function.'
               );
             } else {
               finishExecution(

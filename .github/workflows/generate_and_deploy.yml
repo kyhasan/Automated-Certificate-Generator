@@ -50,6 +50,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Certificate Generator & Netlify Deployer
+        id: generator
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
         run: |
@@ -73,5 +74,20 @@ jobs:
             ARGS+=(--deploy)
           fi
 
-          # pass the array safely
-          python cert_generator.py "${ARGS[@]}"
+          set -o pipefail
+          python cert_generator.py "${ARGS[@]}" 2>&1 | tee generator.log
+
+          SITE_URL="$(sed -nE 's/.*\[DEPLOY SUCCESS\] Site is LIVE at: (https:\/\/[^[:space:]]+).*/\1/p' generator.log | tail -n 1)"
+          echo "site_url=$SITE_URL" >> "$GITHUB_OUTPUT"
+          if [ -n "$SITE_URL" ]; then
+            printf '%s\n' "$SITE_URL" > site_url.txt
+          fi
+
+      - name: Save live site URL for the dashboard
+        if: always() && steps.generator.outputs.site_url != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: netlify-site-url-${{ github.event.inputs.request_id }}
+          path: site_url.txt
+          if-no-files-found: error
+          retention-days: 1
