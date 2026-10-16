@@ -63,7 +63,7 @@ Once opened in your browser, the dashboard provides an intuitive control panel:
 - **Total Rounds** *(Optional)*: Auto-detected from tournament data if left blank.
 - **Netlify Site Name** *(Optional)*: Auto-formatted according to tournament title & category. Ignores duplicate category if already in the name.
 - **Deploy automatically to Netlify** *(Checkbox)*: Enabled by default. Uses the `NETLIFY_AUTH_TOKEN` from your `.env` file.
-- **Process Button**: Initiates the background pipeline and live streams the logs into the terminal window.
+- **Process Button**: Initiates the background pipeline and reports queued, running, completed, or failed status in the terminal window. A link to the GitHub Actions run is shown for detailed logs.
 - **Live Link Card (Success)**: When deployment finishes successfully, a green banner appears displaying the live Netlify site URL (e.g. `https://4th-nca-district-level-tournament-u10.netlify.app`) along with a one-click **"Open Live Site ↗"** button.
 - **Error Card (Failure)**: If deployment or processing fails, a prominent red alert card appears showing the exact error message (e.g., Netlify authentication error, subdomain already taken, or network timeout) and instructing you to inspect the log console.
 
@@ -103,6 +103,6 @@ Make these variables available to Netlify Functions and redeploy after changing 
 
 The workflow also needs the `NETLIFY_AUTH_TOKEN` secret in the **GitHub repository** under **Settings → Secrets and variables → Actions**. This is separate from the GitHub token above: it lets the GitHub Actions workflow deploy the generated certificate site to Netlify.
 
-The GitHub workflow file (`.github/workflows/generate_and_deploy.yml`) must exist on the repository's default branch for manual dispatches. The dispatch itself uses the branch configured by `CERT_GENERATOR_WORKFLOW_REF`.
+The GitHub workflow file (`.github/workflows/generate_and_deploy.yml`) must exist on the repository's default branch for manual dispatches. The dispatch itself uses the branch configured by `CERT_GENERATOR_WORKFLOW_REF`. The dashboard polls GitHub Actions until the workflow completes, displays the final success/failure conclusion, and shows failed job/step names when available. Open the linked workflow run for full logs.
 
 Treat the dashboard access key as a password: anyone who has it can trigger the workflow. Use a long random value, restrict access to the Netlify UI site where possible, and rotate the key if it is exposed.

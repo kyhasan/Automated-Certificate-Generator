@@ -1,4 +1,5 @@
 name: Automated Certificate Generator Pipeline
+run-name: Certificate generator ${{ inputs.request_id }}
 
 on:
   workflow_dispatch:
@@ -24,6 +25,10 @@ on:
         type: boolean
         required: true
         default: true
+      request_id:
+        description: 'Internal request identifier for the Netlify dashboard'
+        required: false
+        default: ''
 
 jobs:
   build-and-deploy:

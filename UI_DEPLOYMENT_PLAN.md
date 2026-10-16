@@ -41,6 +41,7 @@ flowchart TD
   3. Clicking **Process** calls a credential-protected Netlify Function.
   4. The function reads the GitHub token from Netlify environment variables and triggers `workflow_dispatch`.
   5. GitHub Actions runs `cert_generator.py` on an Ubuntu runner and deploys the generated certificates to the target Netlify tournament site.
+  6. The UI polls the correlated workflow run until it completes and displays its success/failure result, failed job/step names, and a link to full logs.
 - **Pros**: Access from anywhere; no local Python runtime needed on the client device.
 
 ### Approach 2: Local Web UI Dashboard (Zero Setup, Instant)

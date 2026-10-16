@@ -529,21 +529,15 @@
               'Content-Type': 'application/json',
               'Authorization': ['Bearer', accessKey].join(' ')
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({ ...payload, action: 'dispatch' })
           });
 
           const result = await response.json();
           if (!response.ok) throw new Error(result.error || 'Failed to trigger GitHub Actions workflow.');
 
           terminal.textContent += 'Workflow dispatch succeeded.\n\n';
-          terminal.textContent += 'Generating certificates and deploying to Netlify on cloud runner...\n';
-          terminal.textContent += `Check live run status at: ${result.actions_url}\n`;
-
-          statusBadge.textContent = 'Workflow Dispatched';
-          statusBadge.className = 'status-badge success';
-          submitBtn.disabled = false;
-          spinner.style.display = 'none';
-          btnText.textContent = 'Process Certificates';
+          terminal.textContent += `Monitoring workflow status...\nRun details: ${result.actions_url}\n`;
+          await monitorCloudWorkflow(accessKey, result.request_id, result.actions_url);
 
         } catch (err) {
           terminal.textContent += `\n[ERROR] ${err.message}\n`;
@@ -551,6 +545,77 @@
         }
       }
     });
+
+    async function monitorCloudWorkflow(accessKey, requestId, actionsUrl) {
+      const timeoutAt = Date.now() + 30 * 60 * 1000;
+      let lastStatus = '';
+      let consecutiveStatusErrors = 0;
+
+      while (Date.now() < timeoutAt) {
+        try {
+          const response = await fetch('/.netlify/functions/dispatch', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': ['Bearer', accessKey].join(' ')
+            },
+            body: JSON.stringify({ action: 'status', request_id: requestId })
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || 'Could not retrieve workflow status.');
+          consecutiveStatusErrors = 0;
+
+          if (result.status !== lastStatus) {
+            lastStatus = result.status;
+            statusBadge.textContent = result.status === 'pending'
+              ? 'Waiting for runner'
+              : result.status.replaceAll('_', ' ');
+            statusBadge.className = 'status-badge running';
+            terminal.textContent += `Workflow status: ${statusBadge.textContent}\n`;
+            terminal.scrollTop = terminal.scrollHeight;
+          }
+
+          if (result.status === 'completed') {
+            terminal.textContent += result.conclusion === 'success'
+              ? '\nWorkflow completed successfully.\n'
+              : `\nWorkflow finished with conclusion: ${result.conclusion || 'unknown'}.\n`;
+            if (result.failure_details && result.failure_details.length > 0) {
+              terminal.textContent += `Failed job/step: ${result.failure_details.join('; ')}\n`;
+            }
+            terminal.textContent += `Run details: ${result.run_url || actionsUrl}\n`;
+            terminal.scrollTop = terminal.scrollHeight;
+
+            if (result.conclusion === 'success') {
+              finishExecution(true, null);
+            } else {
+              finishExecution(
+                false,
+                null,
+                `GitHub Actions workflow ${result.conclusion || 'failed'}. ${result.failure_details.join('; ') || 'Open the run details link in the logs for full output.'}`
+              );
+            }
+            return;
+          }
+        } catch (err) {
+          consecutiveStatusErrors += 1;
+          terminal.textContent += `Status check failed; retrying: ${err.message}\n`;
+          terminal.scrollTop = terminal.scrollHeight;
+          if (consecutiveStatusErrors >= 6) {
+            const message = `Unable to retrieve workflow status after multiple attempts. The workflow may still be running. Check GitHub Actions: ${actionsUrl}`;
+            terminal.textContent += `${message}\n`;
+            terminal.scrollTop = terminal.scrollHeight;
+            finishExecution(false, null, message, 'Status Check Failed');
+            return;
+          }
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 10000));
+      }
+
+      terminal.textContent += `\nStatus monitoring timed out. The workflow may still be running. Check: ${actionsUrl}\n`;
+      terminal.scrollTop = terminal.scrollHeight;
+      finishExecution(false, null, `Could not confirm the workflow result within 30 minutes. Check GitHub Actions: ${actionsUrl}`, 'Status Unknown');
+    }
 
     function startLogPolling() {
       if (pollInterval) clearInterval(pollInterval);
@@ -576,7 +641,7 @@
       }, 1000);
     }
 
-    function finishExecution(success, siteUrl, errorText) {
+    function finishExecution(success, siteUrl, errorText, failureStatus = 'Failed') {
       submitBtn.disabled = false;
       spinner.style.display = 'none';
       btnText.textContent = 'Process Certificates';
@@ -592,7 +657,7 @@
           liveLinkCard.style.display = 'flex';
         }
       } else {
-        statusBadge.textContent = 'Failed';
+        statusBadge.textContent = failureStatus;
         statusBadge.className = 'status-badge error';
         liveLinkCard.style.display = 'none';
         errorMsg.textContent = errorText || 'An error occurred during execution. Please check the logs below.';

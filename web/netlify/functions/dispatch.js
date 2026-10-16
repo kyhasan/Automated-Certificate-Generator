@@ -15,6 +15,78 @@ function isOptionalString(value, maxLength) {
     (typeof value === "string" && value.length <= maxLength);
 }
 
+function githubHeaders(token) {
+  return {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    "X-GitHub-Api-Version": "2022-11-28",
+    "Content-Type": "application/json",
+  };
+}
+
+async function getWorkflowStatus(repository, token, workflowRef, requestId) {
+  const runsUrl = new URL(`https://api.github.com/repos/${repository}/actions/workflows/${workflowFile}/runs`);
+  runsUrl.searchParams.set("branch", workflowRef);
+  runsUrl.searchParams.set("event", "workflow_dispatch");
+  runsUrl.searchParams.set("per_page", "100");
+
+  const runsResponse = await fetch(runsUrl, { headers: githubHeaders(token) });
+  if (!runsResponse.ok) {
+    console.error(`GitHub workflow status lookup failed with status ${runsResponse.status}.`);
+    return jsonResponse(502, { error: "Could not retrieve the GitHub workflow status." });
+  }
+
+  const runsPayload = await runsResponse.json();
+  if (!Array.isArray(runsPayload.workflow_runs)) {
+    console.error("GitHub workflow status response did not contain a workflow run list.");
+    return jsonResponse(502, { error: "GitHub returned an invalid workflow status response." });
+  }
+
+  const run = runsPayload.workflow_runs.find(
+    (workflowRun) => workflowRun.display_title === `Certificate generator ${requestId}`,
+  );
+
+  if (!run) {
+    return jsonResponse(200, {
+      status: "pending",
+      message: "Workflow run is not visible yet. Checking again...",
+    });
+  }
+
+  const result = {
+    status: run.status,
+    conclusion: run.conclusion,
+    run_url: run.html_url,
+    run_number: run.run_number,
+    failure_details: [],
+  };
+
+  if (run.status !== "completed" || run.conclusion === "success") {
+    return jsonResponse(200, result);
+  }
+
+  const jobsUrl = `https://api.github.com/repos/${repository}/actions/runs/${run.id}/jobs?per_page=100`;
+  const jobsResponse = await fetch(jobsUrl, { headers: githubHeaders(token) });
+  if (!jobsResponse.ok) {
+    console.error(`GitHub failed-job lookup failed with status ${jobsResponse.status}.`);
+    return jsonResponse(200, result);
+  }
+
+  const jobsPayload = await jobsResponse.json();
+  result.failure_details = jobsPayload.jobs
+    .filter((job) => job.conclusion && job.conclusion !== "success")
+    .map((job) => {
+      const failedSteps = (Array.isArray(job.steps) ? job.steps : [])
+        .filter((step) => step.conclusion && step.conclusion !== "success")
+        .map((step) => step.name);
+      return failedSteps.length > 0
+        ? `${job.name}: ${failedSteps.join(", ")}`
+        : `${job.name}: ${job.conclusion}`;
+    });
+
+  return jsonResponse(200, result);
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") {
     return jsonResponse(405, { error: "Method not allowed." });
@@ -65,6 +137,24 @@ exports.handler = async (event) => {
     return jsonResponse(400, { error: "Request body must be a JSON object." });
   }
 
+  if (payload.action === "status") {
+    if (typeof payload.request_id !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.request_id)) {
+      return jsonResponse(400, { error: "A valid workflow request ID is required." });
+    }
+
+    try {
+      return await getWorkflowStatus(repository, token, workflowRef, payload.request_id);
+    } catch (error) {
+      console.error("GitHub workflow status request failed:", error);
+      return jsonResponse(502, { error: "Could not connect to GitHub to retrieve workflow status." });
+    }
+  }
+
+  if (payload.action !== "dispatch") {
+    return jsonResponse(400, { error: "Unsupported cloud dispatch action." });
+  }
+
   let tournamentUrl;
   try {
     tournamentUrl = new URL(payload.url);
@@ -91,16 +181,12 @@ exports.handler = async (event) => {
   }
 
   const githubUrl = `https://api.github.com/repos/${repository}/actions/workflows/${workflowFile}/dispatches`;
+  const requestId = crypto.randomUUID();
   let githubResponse;
   try {
     githubResponse = await fetch(githubUrl, {
       method: "POST",
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Content-Type": "application/json",
-      },
+      headers: githubHeaders(token),
       body: JSON.stringify({
         ref: workflowRef,
         inputs: {
@@ -109,6 +195,7 @@ exports.handler = async (event) => {
           rounds: payload.rounds ? String(payload.rounds) : "",
           site_name: payload.site_name || "",
           deploy: String(payload.deploy),
+          request_id: requestId,
         },
       }),
     });
@@ -127,5 +214,6 @@ exports.handler = async (event) => {
 
   return jsonResponse(202, {
     actions_url: `https://github.com/${repository}/actions`,
+    request_id: requestId,
   });
 };
