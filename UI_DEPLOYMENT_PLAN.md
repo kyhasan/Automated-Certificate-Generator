@@ -21,7 +21,8 @@ This document details the architectural plan, technical feasibility, and impleme
 ```mermaid
 flowchart TD
     subgraph Netlify Hosted ["Cloud Architecture (Deployed on Netlify)"]
-        A["Netlify Web UI\n(https://your-generator.netlify.app)"] -->|POST workflow_dispatch| B["GitHub Actions Runner\n(Free, Unlimited Execution Time)"]
+        A["Netlify Web UI\n(https://your-generator.netlify.app)"] -->|POST secured Netlify Function| P["Netlify Function\n(holds GitHub credentials)"]
+        P -->|POST workflow_dispatch| B["GitHub Actions Runner\n(Free, Unlimited Execution Time)"]
         B -->|Runs Python Engine| C["cert_generator.py\n(Generates PDFs & HTML)"]
         C -->|POST /api/v1/deploys| D["Target Netlify Site\n(https://4th-nca-...netlify.app)"]
     end
@@ -37,9 +38,9 @@ flowchart TD
 - **How it works**:
   1. You open the Netlify page from any browser (PC or mobile).
   2. You enter the chess-results URL and toggle settings.
-  3. Clicking **Process** calls the GitHub API (`workflow_dispatch`) to trigger a background job.
-  4. GitHub Actions runs `cert_generator.py` on an Ubuntu runner (no timeouts, unlimited power).
-  5. The certificates are generated and deployed directly to the target Netlify tournament site.
+  3. Clicking **Process** calls a credential-protected Netlify Function.
+  4. The function reads the GitHub token from Netlify environment variables and triggers `workflow_dispatch`.
+  5. GitHub Actions runs `cert_generator.py` on an Ubuntu runner and deploys the generated certificates to the target Netlify tournament site.
 - **Pros**: Access from anywhere; no local Python runtime needed on the client device.
 
 ### Approach 2: Local Web UI Dashboard (Zero Setup, Instant)
@@ -86,6 +87,6 @@ The UI includes all requested fields and features:
 - Double-clickable `run_ui.bat` script for one-click startup on Windows.
 
 ### Phase 3: Cloud Netlify Deployment Files
-- Create `.github/workflows/generate_and_deploy.yml` for cloud execution.
-- Create `netlify.toml` in the `web/` folder to host the web interface on Netlify.
-
+- Use `.github/workflows/generate_and_deploy.yml` for cloud execution.
+- Configure `web/netlify.toml` and `web/netlify/functions/dispatch.js` to securely dispatch the workflow without exposing the GitHub token to the browser.
+- Store the repository, workflow ref, GitHub token, and dashboard access key in Netlify environment variables.

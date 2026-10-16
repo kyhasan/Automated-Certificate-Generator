@@ -387,15 +387,11 @@
         <div id="cloudBox" class="cloud-config-box">
           <h4>☁️ Netlify Cloud Mode Settings</h4>
           <p style="font-size: 0.775rem; color: var(--text-muted); margin-bottom: 0.75rem;">
-            When hosted on Netlify, execution is dispatched to GitHub Actions:
+            GitHub repository and token are configured securely in Netlify. Enter the dashboard access key once per browser tab:
           </p>
           <div class="form-group">
-            <label for="ghRepo">GitHub Repository <span class="label-hint">(owner/repo)</span></label>
-            <input type="text" id="ghRepo" placeholder="e.g. your-username/Automated-Certificate-Generator">
-          </div>
-          <div class="form-group">
-            <label for="ghToken">GitHub Personal Access Token <span class="label-hint">(with 'repo' / 'workflow' scope)</span></label>
-            <input type="password" id="ghToken" placeholder="ghp_...">
+            <label for="cloudAccessKey">Dashboard Access Key</label>
+            <input type="password" id="cloudAccessKey" autocomplete="current-password" placeholder="Set in Netlify environment variables">
           </div>
         </div>
 
@@ -446,6 +442,9 @@
     const modeDot = document.getElementById('modeDot');
     const cloudBox = document.getElementById('cloudBox');
 
+    localStorage.removeItem('gh_repo');
+    localStorage.removeItem('gh_token');
+
     if (isLocal) {
       modeText.textContent = 'Local Server Mode (Zero-Config)';
       modeDot.style.color = '#10b981';
@@ -455,9 +454,11 @@
       modeDot.style.color = '#38bdf8';
       cloudBox.style.display = 'block';
 
-      // Load cached repo/token from localStorage
-      if (localStorage.getItem('gh_repo')) document.getElementById('ghRepo').value = localStorage.getItem('gh_repo');
-      if (localStorage.getItem('gh_token')) document.getElementById('ghToken').value = localStorage.getItem('gh_token');
+      const accessKeyInput = document.getElementById('cloudAccessKey');
+      accessKeyInput.value = sessionStorage.getItem('cloud_access_key') || '';
+      accessKeyInput.addEventListener('input', () => {
+        sessionStorage.setItem('cloud_access_key', accessKeyInput.value);
+      });
     }
 
     const form = document.getElementById('certForm');
@@ -511,49 +512,32 @@
           finishExecution(false, null, err.message);
         }
       } else {
-        // Cloud Netlify mode: dispatch to GitHub Actions workflow
-        const repo = document.getElementById('ghRepo').value.trim();
-        const token = document.getElementById('ghToken').value.trim();
+        // Cloud Netlify mode: dispatch through the credential-protected Netlify Function
+        const accessKey = document.getElementById('cloudAccessKey').value.trim();
 
-        if (!repo || !token) {
-          alert('Please enter your GitHub Repository and Personal Access Token to trigger execution from Netlify.');
-          finishExecution(false, null, 'GitHub Repository or Token was not provided.');
+        if (!accessKey) {
+          finishExecution(false, null, 'Enter the dashboard access key configured for this Netlify site.');
           return;
         }
 
-        localStorage.setItem('gh_repo', repo);
-        localStorage.setItem('gh_token', token);
-
-        terminal.textContent = `[Netlify Cloud Mode]\nDispatching workflow to GitHub Actions (${repo})...\n`;
+        terminal.textContent = '[Netlify Cloud Mode]\nDispatching workflow to GitHub Actions...\n';
 
         try {
-          const ghUrl = `https://api.github.com/repos/${repo}/actions/workflows/generate_and_deploy.yml/dispatches`;
-          const ghResp = await fetch(ghUrl, {
+          const response = await fetch('/.netlify/functions/dispatch', {
             method: 'POST',
             headers: {
-              'Accept': 'application/vnd.github+json',
-              'Authorization': `Bearer ${token}`
+              'Content-Type': 'application/json',
+              'Authorization': ['Bearer', accessKey].join(' ')
             },
-            body: JSON.stringify({
-              ref: 'main',
-              inputs: {
-                tournament_url: payload.url,
-                category: payload.category || '',
-                rounds: payload.rounds ? String(payload.rounds) : '',
-                site_name: payload.site_name || '',
-                deploy: payload.deploy
-              }
-            })
+            body: JSON.stringify(payload)
           });
 
-          if (!ghResp.ok) {
-            const errBody = await ghResp.text();
-            throw new Error(`GitHub API error (${ghResp.status}): ${errBody}`);
-          }
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || 'Failed to trigger GitHub Actions workflow.');
 
-          terminal.textContent += `✓ Successfully triggered GitHub Actions workflow!\n\n`;
-          terminal.textContent += `Generating certificates and deploying to Netlify on cloud runner...\n`;
-          terminal.textContent += `Check live run status at: https://github.com/${repo}/actions\n`;
+          terminal.textContent += 'Workflow dispatch succeeded.\n\n';
+          terminal.textContent += 'Generating certificates and deploying to Netlify on cloud runner...\n';
+          terminal.textContent += `Check live run status at: ${result.actions_url}\n`;
 
           statusBadge.textContent = 'Workflow Dispatched';
           statusBadge.className = 'status-badge success';
@@ -618,4 +602,3 @@
   </script>
 </body>
 </html>
-

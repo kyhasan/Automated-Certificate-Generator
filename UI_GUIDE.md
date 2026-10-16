@@ -71,24 +71,38 @@ Once opened in your browser, the dashboard provides an intuitive control panel:
 
 ## 3. Deploying the UI to Netlify (Cloud Mode)
 
-The UI has been built with **Dual-Mode support** so that the frontend can be deployed statically on Netlify.
+The UI has **Dual-Mode support**. Netlify hosts the static frontend and a small Netlify Function securely dispatches work to GitHub Actions. The function keeps the GitHub token out of the browser; certificate generation still runs in GitHub Actions.
 
 ### Why a Cloud Runner is Used:
 Netlify hosts static frontends and serverless functions, but serverless functions have a strict 10–26 second timeout. Generating dozens or hundreds of PDF certificates with ReportLab can take 30–60 seconds. Therefore, when hosted on Netlify, the web UI uses **GitHub Actions** as the free, background processing engine.
 
-### How to Deploy the UI to Netlify:
-1. Log in to your [Netlify Dashboard](https://app.netlify.com).
-2. Click **Add new project** $\rightarrow$ **Deploy manually**.
-3. Drag and drop the `web/` folder from this project into Netlify Drop.
-4. Netlify will assign a live URL (e.g. `https://my-cert-ui.netlify.app`).
+### Deploying the UI and Function
 
-### Connecting Cloud Mode to GitHub Actions:
-1. When you open your deployed Netlify UI, it automatically detects it is running in **Netlify Cloud Mode**.
-2. An expandable **Cloud Settings** box will appear:
-   - **GitHub Repository**: Enter `your-username/Automated-Certificate-Generator`.
-   - **GitHub Token**: Enter a GitHub Personal Access Token (with `workflow` or `repo` permission).
-3. In your GitHub repository settings:
-   - Go to **Settings** $\rightarrow$ **Secrets and variables** $\rightarrow$ **Actions**.
-   - Add a repository secret named `NETLIFY_AUTH_TOKEN` containing your Netlify Personal Access Token.
-4. When you click **Process Certificates** on your Netlify UI, it dispatches the included workflow (`.github/workflows/generate_and_deploy.yml`), runs the generation pipeline on GitHub's cloud runners, and automatically publishes the certificates to your tournament Netlify site!
+The previous drag-and-drop instructions deployed only static files and could not publish the function. Deploy the project through the Netlify CLI or connect the repository to Netlify so the function in `web/netlify/functions/` is included.
 
+For a CLI deployment:
+1. Install and authenticate the [Netlify CLI](https://docs.netlify.com/cli/get-started/).
+2. Open a terminal in the `web/` directory.
+3. Link the local project to your Netlify UI site with `netlify link`.
+4. Deploy the site and function with `netlify deploy --prod`.
+
+The [`web/netlify.toml`](web/netlify.toml) file sets the publish directory and function directory. If connecting the repository in Netlify instead, set the base directory to `web`; use the `dev` branch if that is where you keep the UI and function.
+
+### Configure GitHub Credentials
+
+In the Netlify dashboard, open the UI site's **Site configuration → Environment variables** and add the following variables. Keep them private; do not put the GitHub token in the frontend, `netlify.toml`, or a committed `.env` file.
+
+| Variable | Value |
+| --- | --- |
+| `CERT_GENERATOR_GITHUB_REPOSITORY` | Repository in `owner/repo` format |
+| `CERT_GENERATOR_GITHUB_TOKEN` | Fine-grained token with access to this repository and **Actions: Read and write** |
+| `CERT_GENERATOR_WORKFLOW_REF` | Branch to dispatch, currently `dev` |
+| `CERT_GENERATOR_UI_ACCESS_KEY` | A long, randomly generated access key for the dashboard |
+
+Make these variables available to Netlify Functions and redeploy after changing them. The dashboard asks for the access key once per browser tab and keeps it only in that tab's `sessionStorage`; it no longer asks for or stores the GitHub token.
+
+The workflow also needs the `NETLIFY_AUTH_TOKEN` secret in the **GitHub repository** under **Settings → Secrets and variables → Actions**. This is separate from the GitHub token above: it lets the GitHub Actions workflow deploy the generated certificate site to Netlify.
+
+The GitHub workflow file (`.github/workflows/generate_and_deploy.yml`) must exist on the repository's default branch for manual dispatches. The dispatch itself uses the branch configured by `CERT_GENERATOR_WORKFLOW_REF`.
+
+Treat the dashboard access key as a password: anyone who has it can trigger the workflow. Use a long random value, restrict access to the Netlify UI site where possible, and rotate the key if it is exposed.
