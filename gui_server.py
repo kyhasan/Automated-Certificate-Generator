@@ -62,7 +62,7 @@ def execute_generation(payload):
             template_file="cert.png",
             output_dir="certificates",
             html_file="index.html",
-            save_csv=True,
+            save_csv=False,
             deploy=deploy,
             site_name=site_name
         )

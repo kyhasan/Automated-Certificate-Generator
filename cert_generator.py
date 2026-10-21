@@ -9,6 +9,7 @@ import sys
 import re
 import io
 import csv
+import html
 import urllib.request
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -24,6 +25,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.colors import HexColor
+from tournament_naming import format_tournament_title
 
 # Register Fonts
 FONT_NAME = "Helvetica"
@@ -168,8 +170,31 @@ def parse_tournament_data(input_url):
         raise ValueError("Could not find ranking table in chess-results page.")
 
     rows1 = re.findall(r'<tr[^>]*>(.*?)</tr>', table_match1.group(1), re.DOTALL)
+    points_column = None
+    for row in rows1:
+        header_cells = [
+            html.unescape(re.sub(r'<[^>]+>', '', cell)).replace('\xa0', ' ').strip()
+            for cell in re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', row, re.DOTALL)
+        ]
+        if header_cells and not header_cells[0].isdigit():
+            points_column = next(
+                (
+                    index for index, cell in enumerate(header_cells)
+                    if re.fullmatch(r'pts?\.?|points?', cell, re.IGNORECASE)
+                ),
+                None
+            )
+            if points_column is not None:
+                break
+
+    if points_column is None:
+        raise ValueError("Could not identify the points column in the ranking table.")
+
     for r in rows1:
-        cells = [re.sub(r'<[^>]+>', '', c).strip() for c in re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', r, re.DOTALL)]
+        cells = [
+            html.unescape(re.sub(r'<[^>]+>', '', cell)).replace('\xa0', ' ').strip()
+            for cell in re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', r, re.DOTALL)
+        ]
         if not cells or not cells[0].isdigit():
             continue
 
@@ -181,8 +206,9 @@ def parse_tournament_data(input_url):
         # Use clean name from art=4 if available, otherwise raw_name
         name = crosstable_names.get(rk, raw_name)
 
-        # Points
-        pts_raw = cells[7] if len(cells) > 7 else "0"
+        if points_column >= len(cells):
+            raise ValueError(f"Ranking row {rk} does not contain the identified points column.")
+        pts_raw = cells[points_column]
         pts = pts_raw.replace(',', '.')
 
         # Player URL for QR Code
@@ -269,6 +295,7 @@ def generate_single_certificate(p, category, total_rounds, template_file, output
 
 def generate_html_page(tournament_title, category, participants, output_html_file):
     """Generate modern, searchable HTML index page with highlight support"""
+    display_title = html.escape(format_tournament_title(tournament_title, category))
     html_rows = []
     for p in participants:
         pdf_link = urllib.parse.quote(p["pdf_file"])
@@ -287,7 +314,7 @@ def generate_html_page(tournament_title, category, participants, output_html_fil
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{tournament_title} Certificates</title>
+  <title>{display_title}</title>
   <style>
     body {{
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
@@ -380,7 +407,7 @@ def generate_html_page(tournament_title, category, participants, output_html_fil
 </head>
 <body>
   <div class="header-box">
-    <h1>{tournament_title}</h1>
+    <h1>{display_title}</h1>
     <h2>Appreciation Certificates</h2>
   </div>
 
@@ -436,7 +463,7 @@ def generate_html_page(tournament_title, category, participants, output_html_fil
         f.write(html_content)
     print(f"[OK] HTML page generated: {output_html_file}")
 
-def run_automation(tournament_url, category=None, total_rounds=None, template_file="cert.png", output_dir="certificates", html_file="index.html", save_csv=True, deploy=False, site_name=None, netlify_token=None):
+def run_automation(tournament_url, category=None, total_rounds=None, template_file="cert.png", output_dir="certificates", html_file="index.html", save_csv=False, deploy=False, site_name=None, netlify_token=None):
     """End-to-end automation pipeline"""
     if not os.path.exists(template_file):
         raise FileNotFoundError(f"Certificate template file not found: {template_file}")
@@ -459,6 +486,8 @@ def run_automation(tournament_url, category=None, total_rounds=None, template_fi
             print(f"Category not specified or detected, defaulting to '{category}'")
     else:
         print(f"Using specified category: {category}")
+
+    tournament_title = format_tournament_title(tournament_title, category)
 
     # Resolve total rounds: user argument > auto-detected > fallback
     if total_rounds is None:

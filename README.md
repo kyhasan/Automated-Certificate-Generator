@@ -57,7 +57,7 @@ To generate certificates and immediately deploy the searchable `index.html` and 
 python cert_generator.py --url "https://s1.chess-results.com/tnr1425535.aspx?lan=1" --deploy
 ```
 
-- **Auto-detection**: Automatically detects category (`U10`), rounds (`5`), and derives the Netlify site name (`4th-nca-district-level-tournament-u10`).
+- **Auto-detection**: Automatically detects category (`U10`) and rounds (`5`), then derives a concise page title and Netlify site name from the tournament title. Common clutter such as audience labels, extra age categories, and numeric IDs is removed (for example, `3rd NCA TN State Level Chess Tournament U08` and `3rd-nca-tn-state-level-tournament-u08`).
 - **Overrides**: You can still explicitly pass `--category "U10"`, `--rounds 5`, or `--site-name <custom-name>` if desired.
 - **Authentication**: Reads `NETLIFY_AUTH_TOKEN` automatically from `.env`.
 - For quick step-by-step setup, see [QUICKSTART.md](QUICKSTART.md).
@@ -80,4 +80,3 @@ The `--no-csv` flag skips the intermediate CSV export when you want faster proce
 - The script expects a valid certificate template image at the path specified by `--template`.
 - The script attempts to register optional custom fonts if present in the same folder.
 - If specific tournament page markup changes, the HTML scraping may need adjustment.
-

@@ -5,13 +5,13 @@ Deploy index.html and certificates/ directly to Netlify without external depende
 
 import os
 import io
-import re
 import sys
 import json
 import zipfile
 import argparse
 import urllib.request
 import urllib.error
+from tournament_naming import MAX_SITE_NAME_LENGTH, slugify_site_name
 
 API_BASE = "https://api.netlify.com/api/v1"
 
@@ -45,44 +45,6 @@ def load_dotenv(env_path=".env"):
 
 # Automatically load .env on import
 load_dotenv()
-
-def slugify_site_name(name_or_title, category=None):
-    """
-    Derives site name from tournament title/site name and category.
-    Checks if the name already ends with the category (ignoring noise words, hyphens, and case):
-    - If it already ends with Category, ignore adding it.
-    - Else, append the Category.
-    """
-    if not category:
-        return re.sub(r'[^a-zA-Z0-9]+', '-', name_or_title).strip('-').lower()
-
-    # Clean noise words from tournament title
-    cleaned = re.sub(r'(?i)\b(chess|server|results)\b', '', name_or_title)
-    # Convert non-alphanumeric characters into hyphens
-    cleaned = re.sub(r'[^a-zA-Z0-9]+', '-', cleaned).strip('-').lower()
-    # Remove trailing year (e.g. -2024 or -2025 or -2026) if preceded by words
-    cleaned = re.sub(r'-(19|20)\d{2}$', '', cleaned)
-    # Normalize category variations (e.g. -under-10 -> -u10, -u-10 -> -u10)
-    cleaned = re.sub(r'-(?:under|cat)-(\d+)', r'-u\1', cleaned)
-    cleaned = re.sub(r'-u-(\d+)', r'-u\1', cleaned)
-
-    cat_clean = re.sub(r'[^a-zA-Z0-9]+', '', category).lower()
-
-    # Build potential category endings (e.g. for U8: ['-u8', '-u08'], for U10: ['-u10'])
-    endings = [f"-{cat_clean}"]
-    digit_match = re.search(r'\d+', cat_clean)
-    if digit_match:
-        num = int(digit_match.group(0))
-        endings.append(f"-u{num}")
-        endings.append(f"-u{num:02d}")
-
-    # Check if the name already ends with the category
-    already_ends_with_cat = any(cleaned.endswith(end) or cleaned == end.lstrip('-') for end in endings)
-
-    if already_ends_with_cat:
-        return cleaned
-    else:
-        return f"{cleaned}-{cat_clean}"
 
 def build_zip_buffer(html_file="index.html", cert_dir="certificates"):
     """
@@ -221,4 +183,3 @@ if __name__ == "__main__":
     except Exception as exc:
         print(f"[ERROR] Deployment failed: {exc}", file=sys.stderr)
         sys.exit(1)
-
