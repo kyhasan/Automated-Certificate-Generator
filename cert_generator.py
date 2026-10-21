@@ -25,7 +25,11 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.colors import HexColor
+from reportlab import rl_config
 from tournament_naming import format_tournament_title
+
+# ASCII85 wrapping uses a Python fallback here and adds substantial work to each PDF.
+rl_config.useA85 = 0
 
 # Register Fonts
 FONT_NAME = "Helvetica"

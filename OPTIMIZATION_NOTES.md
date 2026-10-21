@@ -41,10 +41,19 @@ Why it was changed:
 - The goal was performance improvement, not a redesign.
 - This makes the optimization safer and easier to integrate without affecting outputs.
 
+### 5. Disabled unnecessary ASCII85 wrapping in generated PDFs
+ReportLab was wrapping each embedded image stream in ASCII85 using its pure-Python fallback. The PDF does not need this text encoding, so `rl_config.useA85` is disabled while preserving the original Flate-compressed image data.
+
+Why it was changed:
+- Profiling showed image embedding dominated PDF generation time.
+- A local two-certificate benchmark improved from 7.456 seconds to 1.856 seconds (about 4x faster).
+- The same PDFs decreased from about 7.6 MB to about 6.1 MB each.
+
 ## Result
 These changes reduce overall execution time primarily in two areas:
 - reducing waiting time during page downloads
 - reducing the serial delay of PDF rendering
+- avoiding repeated pure-Python ASCII85 encoding of certificate images
 
 ## Command example
 ```bash
